@@ -1,9 +1,8 @@
-import hashlib
-from hmac import compare_digest
 from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from flask_restful import Resource, Api, reqparse, fields, marshal_with
 from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required, JWTManager
+from werkzeug.security import generate_password_hash, check_password_hash
 
 
 app = Flask(__name__)
@@ -22,21 +21,26 @@ post_resource_fields={'id':fields.Integer, 'post_id':fields.Integer, 'title':fie
 
 
 class Auth(Resource):
-    @marshal_with(user_resource_fields)
     def post(self):
-        print("here")
-        username = request.json.get("username", None)
+        email = request.json.get("email", None)
         password = request.json.get("password", None)
-        password=password.encode()
-        password=hashlib.sha256(password)
+        UserModel.query.filter_by(email=email).first()
+        if user == None:
+            return {"msg":"User doesn't exist"}
+        if email != user.email or check_password_hash(user.password, password):
+            return jsonify({"msg":"Wrong username or password"}), 401 
 
-        user = User.query.filter_by(username=username).one_or_none()
-        if not user or not user.check_password(password.hexdigest()):
-            return jsonify("Wrong username or password"), 401 
 
-
-        access_token = create_access_token(identity=username)
+        access_token = create_access_token(identity=user.username)
         return jsonify(access_token=access_token)
+
+class Register(Resource):
+    def post(self):
+        args=userparser.parse_args()
+        user=UserModel(username=args["username"], email=args["email"], password=generate_password_hash(args["password"]))
+        db.session.add(user)
+        db.session.commit()
+        return {"msg":"created"}, 201
 
 
 class Post(Resource):
@@ -82,9 +86,6 @@ class UserModel(db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False)
     password=db.Column(db.String(20))
 
-    def check_password(self, password):
-        return compare_digest(password, self.password)
-
 
     def __repr__(self):
         return '<User %r>' % self.username
@@ -107,7 +108,8 @@ user=UserModel(username='john', email='john@mail.com')
 
 Parser=reqparse.RequestParser()
 userparser=Parser.add_argument('username', type=str, help='username must be string')
-userparser=Parser.add_argument('email', type=str, help='email must be string')
+userparser=Parser.add_argument('email', type=str, required=True, help='email must be string')
+userparser=Parser.add_argument('password', type=str, required=True, help='password must be string')
 postparser=Parser.add_argument('id', type=int, help='id must be string')
 postparser=Parser.add_argument('title', type=str, help='title must be string')
 postparser=Parser.add_argument('body', type=str, help='body must be string')
@@ -115,16 +117,19 @@ postparser=Parser.add_argument('user_id', type=int, help='user_id must be string
 
 
 class User(Resource):
+    @jwt_required()
     @marshal_with(user_resource_fields)
     def get(self, user_id):
         if user_id==000:
             return UserModel.query.all()
         user=UserModel.query.filter_by(id=user_id).first()
         return user
-
+    @marshal_with(user_resource_fields)
+    # @jwt_required()
     def post(self, user_id):
         args=Parser.parse_args()
-        user=UserModel(username=args['username'], email=args['email'])
+        password=generate_password_hash(args["password"])
+        user=UserModel(username=args['username'], email=args['email'],password=password)
         db.session.add(user)
         db.session.commit()
         return 'user inserted'
@@ -156,6 +161,7 @@ class User(Resource):
 api.add_resource(User, '/user/<int:user_id>')
 api.add_resource(Post, '/post/<int:post_id>')
 api.add_resource(Auth, '/login')
+api.add_resource(Register, '/register')
 
 if __name__ == '__main__':
     app.run(debug=True)
