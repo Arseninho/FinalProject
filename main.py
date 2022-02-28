@@ -1,7 +1,7 @@
 from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from flask_restful import Resource, Api, reqparse, fields, marshal_with
-from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required, JWTManager
+from flask_jwt_extended import create_access_token, jwt_required, JWTManager
 from werkzeug.security import generate_password_hash, check_password_hash
 
 
@@ -24,9 +24,9 @@ class Auth(Resource):
     def post(self):
         email = request.json.get("email", None)
         password = request.json.get("password", None)
-        UserModel.query.filter_by(email=email).first()
+        user=UserModel.query.filter_by(email=email).first()
         if user == None:
-            return {"msg":"User doesn't exist"}
+            return jsonify({"msg":"User doesn't exist"})
         if email != user.email or check_password_hash(user.password, password):
             return jsonify({"msg":"Wrong username or password"}), 401 
 
